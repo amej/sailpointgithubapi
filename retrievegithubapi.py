@@ -1,18 +1,24 @@
 """Module  providing Python library to use the Github API v3."""
 import csv
+from distutils.log import debug
+from email.message import EmailMessage
+from email.mime.application import MIMEApplication
+from email.mime.text import MIMEText
+from email.utils import formatdate
 import os
+from os.path import basename
 import sys
 from datetime import datetime, timedelta
-from time import strftime
 from github import Github
+
+# Code that will use the GitHub API to
+# retrieve a summary of all opened, closed, and in progress pull requests
+# Note: A merged PR is in closed state. Unmerged can be one of open or close
 
 
 def search_for_pr(gitcreds, gitrepo, prstatus, startdate):
     """Function to retrieve pr"""
 
-    repository = gitcreds.get_repo(gitrepo)
-    print("Name of repository is "+str(repository))
-    print("Searching from "+str(startdate))
     stringified_date = startdate.strftime("%Y-%m-%d")
     if prstatus != "merged":
         query = "type:pr"+" is:"+prstatus+" repo:" + \
@@ -22,9 +28,23 @@ def search_for_pr(gitcreds, gitrepo, prstatus, startdate):
                 gitrepo+" updated:>"+stringified_date
 
     pulls = gitcreds.search_issues(query, sort='updated', order='asc')
-    print("Total count of "+prstatus+" pull requests are "
-          + str(pulls.totalCount))
     return pulls
+
+
+def get_specific_fields_of_pr(prdatadump, prstate):
+    """Function accepts all fields of github PR and returns number,title etc"""
+    cleaned_list = []
+    for pull_request in prdatadump:
+        if pull_request is not None:
+            cleaned_item = {}
+            cleaned_item['state'] = prstate
+            cleaned_item['id'] = pull_request.number
+            cleaned_item['title'] = pull_request.title
+            cleaned_item['opened_on'] = pull_request.created_at
+            cleaned_item['last_updated_date'] = pull_request.updated_at
+            cleaned_item['closed_on'] = pull_request.closed_at
+            cleaned_list.append(cleaned_item)
+    return cleaned_list
 
 
 def append_report(report_name, collection_of_pr_fields):
@@ -36,34 +56,43 @@ def append_report(report_name, collection_of_pr_fields):
                             'Opened on', 'Last Updated', 'Closed at'])
     for row in collection_of_pr_fields:
         csvwriter.writerow([row['state'], row['id'], row['title'],
-                            row['opened_on'], row['last_updated_date'], row['closed_on']])
+                            row['opened_on'], row['last_updated_date'],
+                            row['closed_on']])
     report.close()
-    print('Full Report complete')
+    print('Full Report stored at '+report_name)
 
 
-def get_specific_fields_of_pr(prdatadump):
-    """Function accepts all fields of github PR and returns number,title etc"""
-    print(dir(prdatadump))
-    cleaned_list = []
-    for pull_request in prdatadump:
-        if pull_request is not None:
-            cleaned_item = {}
-            cleaned_item['state'] = pull_request.state
-            cleaned_item['id'] = pull_request.number
-            cleaned_item['title'] = pull_request.title
-            cleaned_item['opened_on'] = pull_request.created_at
-            cleaned_item['last_updated_date'] = pull_request.updated_at
-            cleaned_item['closed_on'] = pull_request.closed_at
-            cleaned_list.append(cleaned_item)
-    return cleaned_list
+def send_mail(send_from, send_to, subject, text, files=None, server="127.0.0.1"):
+    assert isinstance(send_to, list)
+
+    msg = EmailMessage()
+    msg['From'] = send_from
+    msg['To'] = ', '.join(send_to)
+    msg['Date'] = formatdate(localtime=True)
+    msg['Subject'] = subject
+    msg.set_content(MIMEText(text))
+
+    msg.preamble = 'You will not see this in a MIME-aware mail reader.\n'
+
+    for f in files or []:
+        with open(f, "rb") as file_pointer:
+            part = MIMEApplication(
+                    file_pointer.read(),
+                    Name=basename(f)
+            )
+        # after the file is closed
+        part['Content-Disposition'] = 'attachment; filename="%s"' % basename(f)
+        msg.attach(part)
+    debug(msg['*'])
 
 
 def main():
     """Launcher function"""
 
-    report_time = datetime.now
-    report_name = 'GitHub_PullRequest'+'.csv'
-    report_dir = '/var/tmp/'
+    now = datetime.now()
+    file_suffix = now.strftime("%Y-%m-%d_%H%M")
+    report_name = 'GitHub_PullRequest_'+file_suffix+'.csv'
+    report_dir = '/var/tmp'
     report_name = report_dir + '/' + report_name
 
     # using an access token
@@ -84,25 +113,55 @@ def main():
     # But unmerged state can indicate 'In progress'  or closed.
     state = ["merged", "unmerged"]
 
+    emailbody = {}
+    emailbody["tldr"] = """
+Dear Mgr/Scrum-Master, 
+pfa summary report in csv format.
+You will find the ID, title, relevant dates of these merged and unmerged PR
+"""
+
     for prstate in state:
         resulting_prs = search_for_pr(
             github_creds, pub_repo, prstate, startdate)
-        prstate_fields = get_specific_fields_of_pr(resulting_prs)
-        if "TO_EMAIL_ADDRESS" in os.environ:
-            append_report(report_name, prstate_fields)
+        emailbody[prstate] = f"""
+In the public repository {pub_repo}, since \
+{startdate.strftime('%Y-%m-%d')} till date, \
+total count of {prstate} ( either open &/ closed ) \
+pull requests are {resulting_prs.totalCount}
+"""
+        prstate_fields = get_specific_fields_of_pr(resulting_prs, prstate)
+        append_report(report_name, prstate_fields)
 
-# write code that will use the GitHub API to
-# retrieve a summary of all opened, closed, and in progress pull requests
+
+    if "TO_EMAIL_ADDRESS" in os.environ:
+        from_address = os.environ['FROM_EMAIL_ADDRESS']
+        # to_list expected input is comma separated
+        to_list = os.environ['TO_EMAIL_ADDRESS'].split(",")
+        smtp_server = os.environ['SMTP_SERVER']
+        subj = 'Report of merged and unmerged GitHub PR in last week'
+        send_mail(from_address, to_list, subj,
+                    emailbody, [report_name], smtp_server)
+    else:
+        from_address = "yours_truly@domain"
+        # to_list expected input is comma separated
+        to_list = "mgr@domain, scrummaster@domain"
+        subj = 'Report of merged and unmerged GitHub PR in last week'
+        print("Contents of the email would be")
+        print(f" From: {from_address} \n \
+                To: {to_list} \n \
+                Subject: {subj} \n ")
+        for line in emailbody:
+            print(emailbody[line])
+        print("Detailed report available at "+report_name)
+
 # Opened
 
 
 # in the last week for a given repository
-# and print an email summary report
+# and print an
 # that might be sent to a manager or Scrum-master.
 # Choose any public target GitHub repository you like that has had at least 3 pull requests
 #  in the last week.
-# Format the content email as you see fit, with the goal to allow the reader to easily digest
-#  the events of the past week.
 
 # Please print to console the details of the email you would send (From, To, Subject, Body).
 # As part of the submission, you are welcome to create a Dockerfile to build an image
