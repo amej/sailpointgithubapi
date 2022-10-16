@@ -46,7 +46,7 @@ def append_report(report_name, collection_of_pr_fields):
     report = open(report_name, 'a+', newline='', encoding='utf-8')
     csvwriter = csv.writer(report)
     if os.path.getsize(report_name) == 0:
-        csvwriter.writerow(['ID of the PR', 'Title of the PR',
+        csvwriter.writerow(['Merged/Unmerged', 'ID of the PR', 'Title of the PR',
                             'Opened on', 'Last Updated', 'Closed at'])
     for row in collection_of_pr_fields:
         csvwriter.writerow([row['state'], row['id'], row['title'],
