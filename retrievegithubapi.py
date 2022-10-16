@@ -54,6 +54,7 @@ def append_report(report_name, collection_of_pr_fields):
                             row['closed_on']])
     report.close()
 
+
 """
 def send_mail(send_from, send_to, subject, text, files=None,
               server="127.0.0.1"):
@@ -91,7 +92,12 @@ def main():
     report_name = report_dir + '/' + report_name
 
     # using an access token
-    access_token = os.environ.get("GITHUB_TOKEN")
+    if os.getenv("GITHUB_TOKEN") is not None:
+        access_token = os.environ.get("GITHUB_TOKEN")
+    else:
+        print("Populate the os env var GITHUB_TOKEN with your token. ")
+        return 1
+
     # Pass the base_url and login
     github_creds = Github(login_or_token=access_token,
                           base_url='https://api.github.com')
@@ -100,9 +106,10 @@ def main():
     days_to_subtract = 7
     startdate = datetime.today() - timedelta(days=days_to_subtract)
 
-    # Sample public repo
-    pub_repo = os.environ.get("PUBLIC_REPO","kubernetes/kubernetes")
-
+    # Set default  public repo, if not passed
+    pub_repo = os.environ.get("PUBLIC_REPO", "kubernetes/kubernetes")
+    if pub_repo == "kubernetes/kubernetes":
+        print("set OS env var PUBLIC_REPO to override "+pub_repo)
 
     # Github PR has merged or unmerged state.
     # Merged always ends in closed state.
@@ -154,9 +161,10 @@ pull requests are {resulting_prs.totalCount}
         print(f" From: {from_address} \n \
                 To: {to_list} \n \
                 Subject: {subj} \n ")
-        for key,value in emailbody.items():
-            print(emailbody[key][value])
+        for line in emailbody:
+            print(emailbody[line])
         print("CSV file  available locally at "+report_name)
+    return 0
 
 
 if __name__ == '__main__':
