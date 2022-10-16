@@ -1,12 +1,6 @@
 """Module  providing Python library to use the Github API v3."""
 import csv
-from distutils.log import debug
-from email.message import EmailMessage
-from email.mime.application import MIMEApplication
-from email.mime.text import MIMEText
-from email.utils import formatdate
 import os
-from os.path import basename
 import sys
 from datetime import datetime, timedelta
 from github import Github
@@ -59,10 +53,11 @@ def append_report(report_name, collection_of_pr_fields):
                             row['opened_on'], row['last_updated_date'],
                             row['closed_on']])
     report.close()
-    print('Full Report stored at '+report_name)
 
-
-def send_mail(send_from, send_to, subject, text, files=None, server="127.0.0.1"):
+"""
+def send_mail(send_from, send_to, subject, text, files=None,
+              server="127.0.0.1"):
+    pass
     assert isinstance(send_to, list)
 
     msg = EmailMessage()
@@ -83,7 +78,7 @@ def send_mail(send_from, send_to, subject, text, files=None, server="127.0.0.1")
         # after the file is closed
         part['Content-Disposition'] = 'attachment; filename="%s"' % basename(f)
         msg.attach(part)
-    debug(msg['*'])
+"""
 
 
 def main():
@@ -106,7 +101,8 @@ def main():
     startdate = datetime.today() - timedelta(days=days_to_subtract)
 
     # Sample public repo
-    pub_repo = os.environ.get("PUBLIC_REPO")
+    pub_repo = os.environ.get("PUBLIC_REPO","kubernetes/kubernetes")
+
 
     # Github PR has merged or unmerged state.
     # Merged always ends in closed state.
@@ -114,10 +110,14 @@ def main():
     state = ["merged", "unmerged"]
 
     emailbody = {}
+# Your code prints a user-friendly summary
+# of open, merged, and closed pull requests including
+# counts of PRs as well as their titles.
     emailbody["tldr"] = """
-Dear Mgr/Scrum-Master, 
+Dear Mgr/Scrum-Master,
 pfa summary report in csv format.
 You will find the ID, title, relevant dates of these merged and unmerged PR
+in the csv file.
 """
 
     for prstate in state:
@@ -132,16 +132,20 @@ pull requests are {resulting_prs.totalCount}
         prstate_fields = get_specific_fields_of_pr(resulting_prs, prstate)
         append_report(report_name, prstate_fields)
 
-
     if "TO_EMAIL_ADDRESS" in os.environ:
+        print("Fully functional in upcoming release")
+        """
         from_address = os.environ['FROM_EMAIL_ADDRESS']
         # to_list expected input is comma separated
         to_list = os.environ['TO_EMAIL_ADDRESS'].split(",")
         smtp_server = os.environ['SMTP_SERVER']
         subj = 'Report of merged and unmerged GitHub PR in last week'
         send_mail(from_address, to_list, subj,
-                    emailbody, [report_name], smtp_server)
+                  emailbody, [report_name], smtp_server)
+        """
     else:
+        # Print to console the details of the email you would send
+        # (From, To, Subject, Body).
         from_address = "yours_truly@domain"
         # to_list expected input is comma separated
         to_list = "mgr@domain, scrummaster@domain"
@@ -150,26 +154,10 @@ pull requests are {resulting_prs.totalCount}
         print(f" From: {from_address} \n \
                 To: {to_list} \n \
                 Subject: {subj} \n ")
-        for line in emailbody:
-            print(emailbody[line])
-        print("Detailed report available at "+report_name)
+        for key,value in emailbody.items():
+            print(emailbody[key][value])
+        print("CSV file  available locally at "+report_name)
 
-# Opened
-
-
-# in the last week for a given repository
-# and print an
-# that might be sent to a manager or Scrum-master.
-# Choose any public target GitHub repository you like that has had at least 3 pull requests
-#  in the last week.
-
-# Please print to console the details of the email you would send (From, To, Subject, Body).
-# As part of the submission, you are welcome to create a Dockerfile to build an image
-# that will run the program, however, other ways of implementing this is acceptable.
-# Your code demonstrates use of variables, looping structures, and control structures
-# Your code prints a user-friendly summary of open, merged, and closed pull requests
-# including counts of PRs as well as their titles. Use your judgement on what you think
-#  is important information.
 
 if __name__ == '__main__':
     sys.exit(main())
