@@ -1,7 +1,9 @@
 """Module  providing Python library to use the Github API v3."""
 import csv
 import os
+import sys
 from datetime import datetime, timedelta
+from time import strftime
 from github import Github
 
 
@@ -10,25 +12,27 @@ def search_for_pr(gitcreds, gitrepo, prstatus, startdate):
 
     repository = gitcreds.get_repo(gitrepo)
     print("Name of repository is "+str(repository))
-    print("Searching from"+str(startdate))
+    print("Searching from "+str(startdate))
     stringified_date = startdate.strftime("%Y-%m-%d")
-    if prstatus is not "merged":
-        query = "type:pr"+" state:"+prstatus+" repo:" + \
-                gitrepo+" created:>"+stringified_date
+    if prstatus != "merged":
+        query = "type:pr"+" is:"+prstatus+" repo:" + \
+                gitrepo+" updated:>"+stringified_date
     else:
         query = "type:pr"+" is:"+prstatus+" repo:" + \
-                gitrepo+" created:>"+stringified_date
-    print("Executing search as"+query)
+                gitrepo+" updated:>"+stringified_date
+
     pulls = gitcreds.search_issues(query, sort='updated', order='asc')
+    print("Total count of "+prstatus+" pull requests are "
+          + str(pulls.totalCount))
     return pulls
 
 
 def append_report(report_name, collection_of_pr_fields):
     """Function accepts collection of PR  and prints out its report"""
-    report = open(report_name, 'a+', newline='',encoding='utf-8')
+    report = open(report_name, 'a+', newline='', encoding='utf-8')
     csvwriter = csv.writer(report)
     if os.path.getsize(report_name) == 0:
-        csvwriter.writerow(['ID of the Pull Request', 'Title of the Pull Request',
+        csvwriter.writerow(['ID of the PR', 'Title of the PR',
                             'Opened on', 'Last Updated', 'Closed at'])
     for row in collection_of_pr_fields:
         csvwriter.writerow([row['state'], row['id'], row['title'],
@@ -38,7 +42,8 @@ def append_report(report_name, collection_of_pr_fields):
 
 
 def get_specific_fields_of_pr(prdatadump):
-    """Function accepts all fields of  github PR and returns the number,title etc"""
+    """Function accepts all fields of github PR and returns number,title etc"""
+    print(dir(prdatadump))
     cleaned_list = []
     for pull_request in prdatadump:
         if pull_request is not None:
@@ -57,7 +62,7 @@ def main():
     """Launcher function"""
 
     report_time = datetime.now
-    report_name = 'GitHub_PullRequest'+f'{report_time}:%Y-%m-%d_%H%M'+'.csv'
+    report_name = 'GitHub_PullRequest'+'.csv'
     report_dir = '/var/tmp/'
     report_name = report_dir + '/' + report_name
 
@@ -67,19 +72,24 @@ def main():
     github_creds = Github(login_or_token=access_token,
                           base_url='https://api.github.com')
 
-    # This porridge is hot, that porridge is cold, these prs need to be younger than a week .
+    # Calculate last week's date
     days_to_subtract = 7
     startdate = datetime.today() - timedelta(days=days_to_subtract)
 
-    # Sample repo
+    # Sample public repo
     pub_repo = os.environ.get("PUBLIC_REPO")
-    state = ["merged", "closed", "open"]
+
+    # Github PR has merged or unmerged state.
+    # Merged always ends in closed state.
+    # But unmerged state can indicate 'In progress'  or closed.
+    state = ["merged", "unmerged"]
 
     for prstate in state:
         resulting_prs = search_for_pr(
             github_creds, pub_repo, prstate, startdate)
         prstate_fields = get_specific_fields_of_pr(resulting_prs)
-        append_report(report_name, prstate_fields)
+        if "TO_EMAIL_ADDRESS" in os.environ:
+            append_report(report_name, prstate_fields)
 
 # write code that will use the GitHub API to
 # retrieve a summary of all opened, closed, and in progress pull requests
@@ -103,4 +113,4 @@ def main():
 #  is important information.
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())
